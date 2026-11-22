@@ -94,7 +94,7 @@ export async function joinGroup(req: Request, res: Response): Promise<void> {
 
 export async function getGroupDetails(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const group = db.getGroupById(id);
     if (!group) {
       res.status(404).json({ error: 'Group not found.' });

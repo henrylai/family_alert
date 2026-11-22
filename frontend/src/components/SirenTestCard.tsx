@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { Volume2, ShieldCheck } from 'lucide-react';
 import { audioAlarm } from '../services/audioAlarm.js';
 import { startUrgentVibration, stopUrgentVibration } from '../services/deviceControls.js';
 

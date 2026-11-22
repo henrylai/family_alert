@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, KeyRound, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { createGroup, joinGroup } from '../services/api.js';
 import { saveSession } from '../services/storage.js';
 

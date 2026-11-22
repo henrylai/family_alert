@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Bell, BellRing, Settings, LogOut, ShieldAlert } from 'lucide-react';
+import { Bell, BellRing, LogOut, ShieldAlert } from 'lucide-react';
 import { getSession, clearSession } from './services/storage.js';
 import { getGroupDetails, triggerAlert, acknowledgeAlert, resolveAlert, registerPushSubscription } from './services/api.js';
 import { audioAlarm } from './services/audioAlarm.js';
@@ -93,7 +93,7 @@ export const App: React.FC = () => {
     };
   }, [session.groupId, session.memberId]);
 
-  const handleIncomingAlarm = (incident: EmergencyIncident) => {
+  const handleIncomingAlarm = (_incident?: EmergencyIncident) => {
     audioAlarm.unlockAudio();
     audioAlarm.startSiren();
     setIsSirenMuted(false);
@@ -265,6 +265,7 @@ export const App: React.FC = () => {
       {showAlarmOverlay && activeIncident && (
         <AlarmOverlay
           incident={activeIncident}
+          acknowledgments={acknowledgments}
           isSender={activeIncident.senderId === session.memberId}
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}

@@ -58,7 +58,7 @@ export async function triggerEmergency(req: Request, res: Response): Promise<voi
 
 export async function acknowledgeIncident(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { memberId, memberName, status, message } = req.body;
 
     const incident = db.getIncidentById(id);
@@ -92,7 +92,7 @@ export async function acknowledgeIncident(req: Request, res: Response): Promise<
 
 export async function resolveIncident(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { resolvedBy } = req.body;
 
     const incident = db.resolveIncident(id, resolvedBy || 'Family Member');
@@ -114,7 +114,7 @@ export async function resolveIncident(req: Request, res: Response): Promise<void
 
 export async function getActiveIncident(req: Request, res: Response): Promise<void> {
   try {
-    const { groupId } = req.params;
+    const groupId = Array.isArray(req.params.groupId) ? req.params.groupId[0] : req.params.groupId;
     const incident = db.getActiveIncident(groupId);
     if (!incident) {
       res.status(200).json({ active: false });

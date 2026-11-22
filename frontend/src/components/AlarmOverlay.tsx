@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { VolumeX, CheckCircle, Navigation, PhoneCall, AlertOctagon } from 'lucide-react';
-import { EmergencyIncident } from '../types/index.js';
+import { VolumeX, CheckCircle, Navigation, PhoneCall, AlertOctagon, Users } from 'lucide-react';
+import { EmergencyIncident, IncidentAcknowledgment } from '../types/index.js';
 
 interface AlarmOverlayProps {
   incident: EmergencyIncident;
+  acknowledgments: IncidentAcknowledgment[];
   isSender: boolean;
   onAcknowledge: (status: 'safe' | 'on_my_way' | 'calling_911' | 'seen') => void;
   onResolve: () => void;
@@ -13,6 +14,7 @@ interface AlarmOverlayProps {
 
 export const AlarmOverlay: React.FC<AlarmOverlayProps> = ({
   incident,
+  acknowledgments,
   isSender,
   onAcknowledge,
   onResolve,
@@ -65,6 +67,25 @@ export const AlarmOverlay: React.FC<AlarmOverlayProps> = ({
         <p className="text-xs text-red-300 mt-2 font-mono bg-red-900/40 py-1 px-3 rounded-lg inline-block">
           Started: {new Date(incident.startedAt).toLocaleTimeString()}
         </p>
+
+        {acknowledgments.length > 0 && (
+          <div className="mt-4 p-3 bg-slate-900/80 border border-red-500/30 rounded-2xl text-left max-h-32 overflow-y-auto">
+            <p className="text-2xs font-bold uppercase tracking-wider text-red-300 mb-1 flex items-center space-x-1">
+              <Users className="w-3.5 h-3.5" />
+              <span>Responses ({acknowledgments.length})</span>
+            </p>
+            <div className="space-y-1">
+              {acknowledgments.map((ack) => (
+                <div key={ack.id} className="text-xs flex items-center justify-between text-slate-200">
+                  <span className="font-semibold">{ack.memberName}:</span>
+                  <span className="capitalize font-mono text-2xs text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded">
+                    {ack.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action / Response Buttons */}
