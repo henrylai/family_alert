@@ -5,19 +5,22 @@ import { startUrgentVibration, stopUrgentVibration } from '../services/deviceCon
 
 export const SirenTestCard: React.FC = () => {
   const [testing, setTesting] = useState(false);
+  const timerRef = React.useRef<number | null>(null);
 
   const toggleTest = () => {
     if (testing) {
+      if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; }
       audioAlarm.stopSiren();
       stopUrgentVibration();
       setTesting(false);
     } else {
       audioAlarm.unlockAudio();
-      audioAlarm.startSiren(5); // 5-second sample
+      audioAlarm.startSiren(5); // 5-second sample; audioAlarm clears its own timer on stop
       startUrgentVibration();
       setTesting(true);
 
-      setTimeout(() => {
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
         setTesting(false);
         stopUrgentVibration();
       }, 5000);

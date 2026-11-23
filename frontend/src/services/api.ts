@@ -52,13 +52,19 @@ export async function acknowledgeAlert(incidentId: string, memberId: string, mem
   return res.json();
 }
 
-export async function resolveAlert(incidentId: string, resolvedBy: string) {
+export async function resolveAlert(incidentId: string, resolvedBy: string, memberId?: string) {
   const res = await fetch(`${API_BASE}/incidents/${incidentId}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resolvedBy })
+    body: JSON.stringify({ resolvedBy, memberId })
   });
   if (!res.ok) throw new Error('Failed to resolve alert');
+  return res.json();
+}
+
+export async function getActiveIncident(groupId: string) {
+  const res = await fetch(`${API_BASE}/incidents/active/${groupId}`);
+  if (!res.ok) throw new Error('Failed to fetch active incident');
   return res.json();
 }
 

@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { BellRing, LogOut, ShieldAlert } from 'lucide-react';
 import { getSession, clearSession } from './services/storage.js';
 import { getGroupDetails, triggerAlert, acknowledgeAlert, resolveAlert } from './services/api.js';
+import { disableCurrentPushSubscription } from './lib/push.js';
 import { audioAlarm } from './services/audioAlarm.js';
 import {
   requestScreenWakeLock,
@@ -54,12 +55,29 @@ export const App: React.FC = () => {
   // Initialize Socket.IO connection
   useEffect(() => {
     if (!session.groupId || !session.memberId) return;
+    const groupId = session.groupId;
 
-    // Fetch initial group state
-    getGroupDetails(session.groupId)
+    // Fetch initial group state, including any acknowledgments already
+    // recorded for an active incident (so a reload mid-incident does
+    // not show an empty Responses list).
+    const refreshGroup = () => {
+      getGroupDetails(groupId)
+        .then((data) => {
+          setGroup(data.group);
+          setMembers(data.members);
+          if (data.acknowledgments) setAcknowledgments(data.acknowledgments);
+          if (data.activeIncident) {
+            setActiveIncident(data.activeIncident);
+          }
+        })
+        .catch((err) => console.error('[App] Failed to refresh group:', err));
+    };
+
+    getGroupDetails(groupId)
       .then((data) => {
         setGroup(data.group);
         setMembers(data.members);
+        if (data.acknowledgments) setAcknowledgments(data.acknowledgments);
         if (data.activeIncident) {
           setActiveIncident(data.activeIncident);
           setShowAlarmOverlay(true);
@@ -80,6 +98,11 @@ export const App: React.FC = () => {
       setActiveIncident(incident);
       setShowAlarmOverlay(true);
       handleIncomingAlarm(incident);
+      refreshGroup();
+    });
+
+    socket.on('member_joined', () => {
+      refreshGroup();
     });
 
     socket.on('member_acknowledged', (ack: IncidentAcknowledgment) => {
@@ -97,7 +120,9 @@ export const App: React.FC = () => {
     socket.on('alert_resolved', () => {
       setActiveIncident(null);
       setShowAlarmOverlay(false);
+      setAcknowledgments([]);
       stopAlarmAudio();
+      refreshGroup();
     });
 
     // Unlock Web Audio on any touch/click event on document
@@ -113,6 +138,19 @@ export const App: React.FC = () => {
       window.removeEventListener('click', unlockListener);
     };
   }, [session.groupId, session.memberId]);
+
+  // Re-acquire the Wake Lock when the app comes back to the foreground
+  // during an active incident (it is released automatically on hide).
+  useEffect(() => {
+    if (!activeIncident) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        requestScreenWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [activeIncident]);
 
   const handleIncomingAlarm = (_incident?: EmergencyIncident) => {
     audioAlarm.unlockAudio();
@@ -140,7 +178,9 @@ export const App: React.FC = () => {
       );
       setActiveIncident(data.incident);
       setShowAlarmOverlay(true);
-      handleIncomingAlarm(data.incident);
+      // The sender does not get the full siren on their own phone:
+      // they need it usable to call for help. Other members' devices
+      // alarm via socket + push (push already excludes the sender).
     } catch (err) {
       console.error('[App] Error triggering alert:', err);
     }
@@ -157,9 +197,9 @@ export const App: React.FC = () => {
   };
 
   const handleResolve = async () => {
-    if (!activeIncident || !session.displayName) return;
+    if (!activeIncident || !session.displayName || !session.memberId) return;
     try {
-      await resolveAlert(activeIncident.id, session.displayName);
+      await resolveAlert(activeIncident.id, session.displayName, session.memberId ?? undefined);
       setActiveIncident(null);
       setShowAlarmOverlay(false);
       stopAlarmAudio();
@@ -169,6 +209,7 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    disableCurrentPushSubscription().catch(() => undefined);
     clearSession();
     setSession({ groupId: null, memberId: null, displayName: null, token: null });
     setGroup(null);
@@ -277,6 +318,7 @@ export const App: React.FC = () => {
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}
           onMuteSiren={stopAlarmAudio}
+          onResumeAudio={() => { if (!isSirenMuted) audioAlarm.resumeAndRestart(); }}
           isMuted={isSirenMuted}
         />
       )}

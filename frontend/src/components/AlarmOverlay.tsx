@@ -9,6 +9,7 @@ interface AlarmOverlayProps {
   onAcknowledge: (status: 'safe' | 'on_my_way' | 'calling_911' | 'seen') => void;
   onResolve: () => void;
   onMuteSiren: () => void;
+  onResumeAudio?: () => void;
   isMuted: boolean;
 }
 
@@ -19,6 +20,7 @@ export const AlarmOverlay: React.FC<AlarmOverlayProps> = ({
   onAcknowledge,
   onResolve,
   onMuteSiren,
+  onResumeAudio,
   isMuted
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export const AlarmOverlay: React.FC<AlarmOverlayProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 bg-red-950 text-white animate-flash overflow-y-auto">
+    <div onPointerDown={() => { if (!isMuted && onResumeAudio) onResumeAudio(); }} className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 bg-red-950 text-white animate-flash overflow-y-auto">
       {/* Header */}
       <div className="w-full max-w-md flex items-center justify-between pt-4">
         <div className="flex items-center space-x-2 bg-red-900/80 px-3 py-1.5 rounded-full border border-red-500/50">

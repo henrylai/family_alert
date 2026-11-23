@@ -131,6 +131,7 @@ The project is pre-configured with a root `Dockerfile` and `railway.json`.
 3. Select **"Deploy from GitHub repo"** and select `henrylai/family_alert`.
 4. Railway will automatically build the multi-stage `Dockerfile` (compiling both frontend and backend into a single efficient container).
 5. In your Railway service settings under **Variables**, optionally configure:
+   - `APP_PASSWORD`: `(Recommended)` a shared family password. When set, the whole app (pages, API, and realtime sockets) requires a one-time sign-in per device; the signed cookie lasts 400 days and renews whenever the app is opened, so it effectively never expires. When unset, the app is fully open. Changing it signs every device out.
    - `PORT`: `4000` (or leave default; Railway assigns dynamically)
    - `NODE_ENV`: `production`
    - `VAPID_PUBLIC_KEY`: `(Optional: your custom VAPID public key)`

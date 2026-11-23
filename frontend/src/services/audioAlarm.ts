@@ -6,6 +6,7 @@ class AudioAlarmService {
   private oscillator: OscillatorNode | null = null;
   private gainNode: GainNode | null = null;
   private intervalId: number | null = null;
+  private durationTimerId: number | null = null;
   private isPlaying: boolean = false;
   // Fallback for browsers that block Web Audio until a user gesture after navigation
   private audioEl: HTMLAudioElement | null = null;
@@ -83,13 +84,40 @@ class AudioAlarmService {
     }
 
     if (durationSeconds) {
-      window.setTimeout(() => {
+      if (this.durationTimerId) window.clearTimeout(this.durationTimerId);
+      this.durationTimerId = window.setTimeout(() => {
+        this.durationTimerId = null;
         this.stopSiren();
       }, durationSeconds * 1000);
     }
   }
 
+  // Resume a suspended AudioContext after a user gesture and restart
+  // the siren if an alarm should be sounding. Used when the app was
+  // reloaded into an active incident: browsers block audio until a tap,
+  // so the first tap on the alarm overlay calls this.
+  public resumeAndRestart() {
+    this.initContext();
+    if (!this.isPlaying) {
+      this.startSiren();
+      return;
+    }
+    // Was "playing" only through the blocked fallback; retry Web Audio
+    // now that a gesture has unlocked it.
+    if (this.audioCtx && this.audioCtx.state === 'running' && !this.oscillator && this.audioEl) {
+      const el = this.audioEl;
+      this.audioEl = null;
+      try { el.pause(); } catch { /* ignore */ }
+      this.isPlaying = false;
+      this.startSiren();
+    }
+  }
+
   public stopSiren() {
+    if (this.durationTimerId) {
+      window.clearTimeout(this.durationTimerId);
+      this.durationTimerId = null;
+    }
     if (!this.isPlaying) return;
     this.isPlaying = false;
 

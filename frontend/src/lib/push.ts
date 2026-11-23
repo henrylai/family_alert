@@ -134,7 +134,13 @@ async function registerPushSubscription(
 function encodeSubscriptionKey(subscription: PushSubscription, name: 'p256dh' | 'auth'): string {
   const key = subscription.getKey(name);
   if (!key) throw new Error(`Push subscription is missing its ${name} key`);
-  return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(key))));
+  // Base64url, not standard base64: web-push decodes these keys as
+  // url-safe base64, and standard encoding breaks whenever the raw
+  // bytes happen to produce '+' or '/'.
+  return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(key))))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {

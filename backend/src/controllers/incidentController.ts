@@ -1,21 +1,50 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import { z } from 'zod';
 import { db } from '../db/index.js';
 import { EmergencyIncident, IncidentAcknowledgment } from '../types/index.js';
 import { sendEmergencyPushToGroup } from '../services/pushService.js';
 import { getSocketServer } from '../socket/index.js';
 
+const triggerInput = z.object({
+  groupId: z.string().min(1).max(64),
+  senderId: z.string().min(1).max(64),
+  senderName: z.string().trim().min(1).max(60),
+  notes: z.string().trim().max(500).optional()
+});
+
+const acknowledgeInput = z.object({
+  memberId: z.string().min(1).max(64),
+  memberName: z.string().trim().min(1).max(60),
+  status: z.enum(['safe', 'on_my_way', 'calling_911', 'seen']).optional(),
+  message: z.string().trim().max(500).optional()
+});
+
+const resolveInput = z.object({
+  resolvedBy: z.string().trim().min(1).max(60).optional(),
+  memberId: z.string().min(1).max(64)
+});
+
 export async function triggerEmergency(req: Request, res: Response): Promise<void> {
   try {
-    const { groupId, senderId, senderName, notes } = req.body;
-    if (!groupId || !senderId || !senderName) {
-      res.status(400).json({ error: 'Missing required parameters.' });
+    const parsed = triggerInput.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Missing or invalid required parameters.' });
       return;
     }
+    const { groupId, senderId, senderName, notes } = parsed.data;
 
     const group = db.getGroupById(groupId);
     if (!group) {
       res.status(404).json({ error: 'Group not found.' });
+      return;
+    }
+
+    // The sender must actually be a member of this group, under the
+    // name they claim — a group ID alone is not enough to cry wolf.
+    const sender = db.getMemberById(senderId);
+    if (!sender || sender.groupId !== groupId) {
+      res.status(403).json({ error: 'Sender is not a member of this group.' });
       return;
     }
 
@@ -30,7 +59,7 @@ export async function triggerEmergency(req: Request, res: Response): Promise<voi
       id: crypto.randomUUID(),
       groupId,
       senderId,
-      senderName,
+      senderName: sender.displayName,
       status: 'active',
       startedAt: new Date().toISOString(),
       notes: notes || 'Emergency alert triggered'
@@ -50,19 +79,34 @@ export async function triggerEmergency(req: Request, res: Response): Promise<voi
     });
 
     res.status(201).json({ incident });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Could not trigger the alert. Try again.' });
   }
 }
 
 export async function acknowledgeIncident(req: Request, res: Response): Promise<void> {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const { memberId, memberName, status, message } = req.body;
+    const parsed = acknowledgeInput.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Missing or invalid required parameters.' });
+      return;
+    }
+    const { memberId, status, message } = parsed.data;
 
     const incident = db.getIncidentById(id);
     if (!incident) {
       res.status(404).json({ error: 'Incident not found.' });
+      return;
+    }
+    if (incident.status !== 'active') {
+      res.status(409).json({ error: 'Incident is no longer active.' });
+      return;
+    }
+
+    const member = db.getMemberById(memberId);
+    if (!member || member.groupId !== incident.groupId) {
+      res.status(403).json({ error: 'Member is not part of this incident\'s group.' });
       return;
     }
 
@@ -70,7 +114,7 @@ export async function acknowledgeIncident(req: Request, res: Response): Promise<
       id: crypto.randomUUID(),
       incidentId: id,
       memberId,
-      memberName,
+      memberName: member.displayName,
       status: status || 'seen',
       timestamp: new Date().toISOString(),
       message
@@ -84,19 +128,40 @@ export async function acknowledgeIncident(req: Request, res: Response): Promise<
     }
 
     res.status(200).json({ acknowledgment: ack });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Could not acknowledge the alert. Try again.' });
   }
 }
 
 export async function resolveIncident(req: Request, res: Response): Promise<void> {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const { resolvedBy } = req.body;
+    const parsed = resolveInput.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'A group member is required to resolve an incident.' });
+      return;
+    }
+    const resolvedByName = parsed.data.resolvedBy;
+    const memberId = parsed.data.memberId;
 
-    const incident = db.resolveIncident(id, resolvedBy || 'Family Member');
+    const existing = db.getIncidentById(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Incident not found.' });
+      return;
+    }
+    if (existing.status !== 'active') {
+      res.status(409).json({ error: 'Incident is already resolved.' });
+      return;
+    }
+    const member = db.getMemberById(memberId);
+    if (!member || member.groupId !== existing.groupId) {
+      res.status(403).json({ error: 'Member is not part of this incident\'s group.' });
+      return;
+    }
+
+    const incident = db.resolveIncident(id, member.displayName || resolvedByName || 'Family Member');
     if (!incident) {
-      res.status(404).json({ error: 'Incident not found or already resolved.' });
+      res.status(404).json({ error: 'Incident not found.' });
       return;
     }
 
@@ -106,8 +171,8 @@ export async function resolveIncident(req: Request, res: Response): Promise<void
     }
 
     res.status(200).json({ incident });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Could not resolve the alert. Try again.' });
   }
 }
 
@@ -126,7 +191,7 @@ export async function getActiveIncident(req: Request, res: Response): Promise<vo
       incident,
       acknowledgments
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Could not load the active incident. Try again.' });
   }
 }
