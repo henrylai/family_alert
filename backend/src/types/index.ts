@@ -16,6 +16,19 @@ export interface GroupMember {
   lastSeenAt: string;
 }
 
+export interface DeviceSubscription {
+  id: string;
+  memberId: string;
+  groupId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PushSubscriptionJSON {
   endpoint: string;
   expirationTime?: number | null;

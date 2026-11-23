@@ -3,11 +3,13 @@ import ReactDOM from 'react-dom/client';
 import { App } from './App.js';
 import './index.css';
 
-// Register Service Worker for Web Push notifications
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+import { registerServiceWorker } from './lib/push.js';
+
+// Register Service Worker for Web Push notifications (replicated from self_push_notifications)
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.warn('[PWA] Service Worker registration failed:', err);
+    registerServiceWorker().catch((err) => {
+      console.warn('[PWA] Service Worker registration note:', err.message);
     });
   });
 }

@@ -11,6 +11,7 @@ import {
   resolveIncident,
   getActiveIncident
 } from './controllers/incidentController.js';
+import { registerDevice, unregisterDevice } from './controllers/deviceController.js';
 import { getVapidPublicKey } from './services/pushService.js';
 import { db } from './db/index.js';
 
@@ -47,20 +48,13 @@ app.post('/api/incidents/:id/acknowledge', acknowledgeIncident);
 app.post('/api/incidents/:id/resolve', resolveIncident);
 app.get('/api/incidents/active/:groupId', getActiveIncident);
 
-// Web Push VAPID Key & Subscription
+// Device Push Subscriptions (self_push_notifications pattern)
 app.get('/api/push/public-key', (_req: Request, res: Response) => {
   res.status(200).json({ publicKey: getVapidPublicKey() });
 });
 
-app.post('/api/push/subscribe', (req: Request, res: Response) => {
-  const { memberId, subscription } = req.body;
-  if (!memberId || !subscription) {
-    res.status(400).json({ error: 'memberId and subscription required.' });
-    return;
-  }
-  const updated = db.updateMemberPushSubscription(memberId, subscription);
-  res.status(200).json({ success: updated });
-});
+app.post('/api/devices', registerDevice);
+app.post('/api/devices/unregister', unregisterDevice);
 
 // Serve frontend static assets in production
 const publicDir = path.join(process.cwd(), 'public');

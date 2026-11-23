@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Bell, BellRing, LogOut, ShieldAlert } from 'lucide-react';
+import { BellRing, LogOut, ShieldAlert } from 'lucide-react';
 import { getSession, clearSession } from './services/storage.js';
-import { getGroupDetails, triggerAlert, acknowledgeAlert, resolveAlert, registerPushSubscription } from './services/api.js';
+import { getGroupDetails, triggerAlert, acknowledgeAlert, resolveAlert } from './services/api.js';
 import { audioAlarm } from './services/audioAlarm.js';
 import {
   requestScreenWakeLock,
@@ -18,6 +18,7 @@ import { MemberRoster } from './components/MemberRoster.js';
 import { ActiveIncidentBanner } from './components/ActiveIncidentBanner.js';
 import { DNDSetupGuideModal } from './components/DNDSetupGuideModal.js';
 import { SirenTestCard } from './components/SirenTestCard.js';
+import { PushSetupNotice } from './components/PushSetupNotice.js';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState(getSession());
@@ -28,7 +29,27 @@ export const App: React.FC = () => {
   const [showAlarmOverlay, setShowAlarmOverlay] = useState(false);
   const [isSirenMuted, setIsSirenMuted] = useState(false);
   const [showDNDGuide, setShowDNDGuide] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(false);
+
+  // Handle ?autoplay=true URL param set by service worker notificationclick
+  // Push notification tap is a user gesture, so AudioContext can start immediately
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autoplay') === 'true') {
+      // Small delay to let AudioContext init after navigation
+      const timer = window.setTimeout(() => {
+        audioAlarm.unlockAudio();
+        audioAlarm.startSiren();
+        setIsSirenMuted(false);
+        startUrgentVibration();
+        requestScreenWakeLock();
+        setShowAlarmOverlay(true);
+      }, 150);
+      // Clean up the URL param without triggering a navigation
+      const cleanUrl = window.location.pathname + (params.get('alert') ? `?alert=${params.get('alert')}` : '');
+      window.history.replaceState({}, '', cleanUrl);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
 
   // Initialize Socket.IO connection
   useEffect(() => {
@@ -147,17 +168,6 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleEnablePush = async () => {
-    if (!session.memberId) return;
-    const ok = await registerPushSubscription(session.memberId);
-    setPushEnabled(ok);
-    if (ok) {
-      alert('High-priority emergency push notifications enabled!');
-    } else {
-      setShowDNDGuide(true);
-    }
-  };
-
   const handleLogout = () => {
     clearSession();
     setSession({ groupId: null, memberId: null, displayName: null, token: null });
@@ -200,17 +210,6 @@ export const App: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button
             type="button"
-            onClick={handleEnablePush}
-            className={`p-2 rounded-xl text-xs transition-colors ${
-              pushEnabled ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-            title="Enable Emergency Push Notifications"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
-
-          <button
-            type="button"
             onClick={() => setShowDNDGuide(true)}
             className="p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-amber-400 border border-slate-800 text-xs"
             title="DND & Emergency Bypass Setup"
@@ -245,6 +244,14 @@ export const App: React.FC = () => {
           onTrigger={handleTriggerEmergency}
           disabled={activeIncident?.status === 'active'}
         />
+
+        {/* Push Notification Setup Prompt (shows when not yet registered) */}
+        <div className="w-full mt-4">
+          <PushSetupNotice
+            memberId={session.memberId}
+            groupId={session.groupId}
+          />
+        </div>
 
         {/* Siren Sound Test Card */}
         <div className="w-full mt-2 mb-4">

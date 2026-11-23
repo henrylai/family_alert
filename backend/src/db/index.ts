@@ -1,12 +1,25 @@
 import fs from 'fs';
 import path from 'path';
-import { FamilyGroup, GroupMember, EmergencyIncident, IncidentAcknowledgment } from '../types/index.js';
+import crypto from 'crypto';
+import webpush from 'web-push';
+import {
+  FamilyGroup,
+  GroupMember,
+  EmergencyIncident,
+  IncidentAcknowledgment,
+  DeviceSubscription
+} from '../types/index.js';
 
 interface DatabaseSchema {
   groups: FamilyGroup[];
   members: GroupMember[];
   incidents: EmergencyIncident[];
   acknowledgments: IncidentAcknowledgment[];
+  devices: DeviceSubscription[];
+  vapidKeys?: {
+    publicKey: string;
+    privateKey: string;
+  };
 }
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
@@ -17,7 +30,8 @@ class DatabaseService {
     groups: [],
     members: [],
     incidents: [],
-    acknowledgments: []
+    acknowledgments: [],
+    devices: []
   };
 
   constructor() {
@@ -33,11 +47,12 @@ class DatabaseService {
       if (fs.existsSync(DB_PATH)) {
         const raw = fs.readFileSync(DB_PATH, 'utf-8');
         this.data = JSON.parse(raw);
+        if (!this.data.devices) this.data.devices = [];
       } else {
         this.persist();
       }
     } catch (err) {
-      console.error('[DB] Failed to load data, starting with fresh in-memory store:', err);
+      console.error('[DB] Failed to load data, starting with fresh store:', err);
     }
   }
 
@@ -50,6 +65,30 @@ class DatabaseService {
     } catch (err) {
       console.error('[DB] Failed to persist data:', err);
     }
+  }
+
+  // Persistent VAPID Key Management
+  public getOrCreateVapidKeys(): { publicKey: string; privateKey: string } {
+    if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+      return {
+        publicKey: process.env.VAPID_PUBLIC_KEY,
+        privateKey: process.env.VAPID_PRIVATE_KEY
+      };
+    }
+
+    if (this.data.vapidKeys?.publicKey && this.data.vapidKeys?.privateKey) {
+      return this.data.vapidKeys;
+    }
+
+    // Generate once and store permanently in database
+    const generated = webpush.generateVAPIDKeys();
+    this.data.vapidKeys = {
+      publicKey: generated.publicKey,
+      privateKey: generated.privateKey
+    };
+    this.persist();
+    console.log('[DB] Generated and saved permanent VAPID keys into database.');
+    return this.data.vapidKeys;
   }
 
   // Group Operations
@@ -83,14 +122,72 @@ class DatabaseService {
     return this.data.members.filter(m => m.groupId === groupId);
   }
 
-  public updateMemberPushSubscription(memberId: string, subscription: any): boolean {
-    const member = this.getMemberById(memberId);
-    if (member) {
-      member.pushSubscription = subscription;
+  // Device Push Subscription Operations (matching self_push_notifications pattern)
+  public registerDevice(params: {
+    memberId: string;
+    groupId: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    userAgent?: string;
+  }): DeviceSubscription {
+    const existingIndex = this.data.devices.findIndex(d => d.endpoint === params.endpoint);
+    const now = new Date().toISOString();
+
+    if (existingIndex >= 0) {
+      this.data.devices[existingIndex] = {
+        ...this.data.devices[existingIndex],
+        memberId: params.memberId,
+        groupId: params.groupId,
+        p256dh: params.p256dh,
+        auth: params.auth,
+        userAgent: params.userAgent || this.data.devices[existingIndex].userAgent,
+        isActive: true,
+        updatedAt: now
+      };
+      this.persist();
+      return this.data.devices[existingIndex];
+    }
+
+    const device: DeviceSubscription = {
+      id: crypto.randomUUID(),
+      memberId: params.memberId,
+      groupId: params.groupId,
+      endpoint: params.endpoint,
+      p256dh: params.p256dh,
+      auth: params.auth,
+      userAgent: params.userAgent,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.data.devices.push(device);
+    this.persist();
+    return device;
+  }
+
+  public unregisterDevice(endpoint: string): boolean {
+    const device = this.data.devices.find(d => d.endpoint === endpoint);
+    if (device) {
+      device.isActive = false;
+      device.updatedAt = new Date().toISOString();
       this.persist();
       return true;
     }
     return false;
+  }
+
+  public getActiveDevicesByGroupId(groupId: string): DeviceSubscription[] {
+    return this.data.devices.filter(d => d.groupId === groupId && d.isActive);
+  }
+
+  public deactivateDevice(endpoint: string): void {
+    const device = this.data.devices.find(d => d.endpoint === endpoint);
+    if (device) {
+      device.isActive = false;
+      this.persist();
+    }
   }
 
   // Incident Operations
@@ -122,7 +219,6 @@ class DatabaseService {
 
   // Acknowledgment Operations
   public addAcknowledgment(ack: IncidentAcknowledgment): IncidentAcknowledgment {
-    // Upsert acknowledgment by member
     const existingIndex = this.data.acknowledgments.findIndex(
       a => a.incidentId === ack.incidentId && a.memberId === ack.memberId
     );

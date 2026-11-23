@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../db/index.js';
 import { EmergencyIncident, IncidentAcknowledgment } from '../types/index.js';
-import { sendEmergencyPushToMembers } from '../services/pushService.js';
+import { sendEmergencyPushToGroup } from '../services/pushService.js';
 import { getSocketServer } from '../socket/index.js';
 
 export async function triggerEmergency(req: Request, res: Response): Promise<void> {
@@ -44,9 +44,8 @@ export async function triggerEmergency(req: Request, res: Response): Promise<voi
       io.to(`group_${groupId}`).emit('alert_triggered', incident);
     }
 
-    // Trigger Web Push to all members asynchronously
-    const members = db.getMembersByGroupId(groupId);
-    sendEmergencyPushToMembers(members, incident).catch(err => {
+    // Trigger Web Push to all active devices in group asynchronously
+    sendEmergencyPushToGroup(groupId, incident).catch(err => {
       console.error('[Incident] Push dispatch error:', err);
     });
 
